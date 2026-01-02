@@ -2,95 +2,72 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-# 页面基础设置
-st.set_page_config(page_title="车数吨数自动汇总", page_icon="🚛")
+# 设置网页标题
+st.set_page_config(page_title="报数助手", layout="centered")
 
 def process_data(df):
-    # 1. 对应你图片中的表头
-        mapping = {
-                '过磅类型': '过磅类型',  # N列
-                        '收货单位': '收货单位',  # K列
-                                '货物名称': '货物名称',  # E列
-                                        '型号规格': '型号规格',  # L列
-                                                '净重': '净重',          # H列
-                                                        '金额': '金额'           # J列
-                                                            }
-                                                                
-                                                                    # 清洗：去除空格，确保列名匹配
-                                                                        df.columns = [str(c).strip() for c in df.columns]
-                                                                            
-                                                                                # 2. 核心分类逻辑
-                                                                                    def check_cat(x):
-                                                                                            val = str(x).strip()
-                                                                                                    if '零售（现金）' in val: return '现金'
-                                                                                                            if '零售（微信）' in val: return '微信'
-                                                                                                                    if '签单' in val: return '签单'
-                                                                                                                            return '其他'
+    # 自动对齐你图片里的列名
+    df.columns = [str(c).strip() for c in df.columns]
+    
+    # 映射表
+    col_map = {
+        '过磅类型': '过磅类型', # N列
+        '收货单位': '收货单位', # K列
+        '货物名称': '货物名称', # E列
+        '型号规格': '型号规格', # L列
+        '净重': '净重',         # H列
+        '金额': '金额'          # J列
+    }
 
-                                                                                                                                df['分类'] = df['过磅类型'].apply(check_cat)
-                                                                                                                                    df['车数'] = 1  # 每一行为一车
-                                                                                                                                        
-                                                                                                                                            # 填充空值，避免显示 "nan"
-                                                                                                                                                df = df.fillna('')
-                                                                                                                                                    # 确保数字列可以计算
-                                                                                                                                                        df['净重'] = pd.to_numeric(df['净重'], errors='coerce').fillna(0)
-                                                                                                                                                            df['金额'] = pd.to_numeric(df['金额'], errors='coerce').fillna(0)
+    # 转换分类
+    def get_cat(x):
+        val = str(x).strip()
+        if '零售（现金）' in val: return '现金'
+        if '零售（微信）' in val: return '微信'
+        if '签单' in val: return '签单'
+        return '其他'
 
-                                                                                                                                                                # 3. 开始拼装文本
-                                                                                                                                                                    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-                                                                                                                                                                        
-                                                                                                                                                                            # 总汇总（排除“其他”类型）
-                                                                                                                                                                                main_data = df[df['分类'] != '其他']
-                                                                                                                                                                                    total_cars = len(main_data)
-                                                                                                                                                                                        total_tons = main_data['净重'].sum()
-                                                                                                                                                                                            total_money = main_data['金额'].sum()
+    df['分类'] = df['过磅类型'].apply(get_cat)
+    df['车数'] = 1
+    df = df.fillna('')
+    df['净重'] = pd.to_numeric(df['净重'], errors='coerce').fillna(0)
+    df['金额'] = pd.to_numeric(df['金额'], errors='coerce').fillna(0)
 
-                                                                                                                                                                                                res = []
-                                                                                                                                                                                                    res.append(f"{now}")
-                                                                                                                                                                                                        res.append(f"今日车数 {total_cars} 今日吨数 {total_tons:.2f} 金额 {total_money:.2f}")
-                                                                                                                                                                                                            res.append("-" * 25)
+    # 汇总
+    valid_df = df[df['分类'] != '其他']
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    res = [f"{now}", f"今日车数 {len(valid_df)} 今日吨数 {valid_df['净重'].sum():.2f} 金额 {valid_df['金额'].sum():.2f}", "-"*25]
 
-                                                                                                                                                                                                                # 按 现金 -> 微信 -> 签单 顺序排列
-                                                                                                                                                                                                                    for cat in ['现金', '微信', '签单']:
-                                                                                                                                                                                                                            sub = df[df['分类'] == cat]
-                                                                                                                                                                                                                                    if sub.empty: continue
-                                                                                                                                                                                                                                            
-                                                                                                                                                                                                                                                    s_cars = len(sub)
-                                                                                                                                                                                                                                                            s_tons = sub['净重'].sum()
-                                                                                                                                                                                                                                                                    s_money = sub['金额'].sum()
-                                                                                                                                                                                                                                                                            
-                                                                                                                                                                                                                                                                                    # 签单标题行不带金额
-                                                                                                                                                                                                                                                                                            if cat == '签单':
-                                                                                                                                                                                                                                                                                                        res.append(f"\n{cat}: 车数 {s_cars} 吨数 {s_tons:.2f}")
-                                                                                                                                                                                                                                                                                                                else:
-                                                                                                                                                                                                                                                                                                                            res.append(f"\n{cat}: 车数 {s_cars} 吨数 {s_tons:.2f} 金额 {s_money:.2f}")
-                                                                                                                                                                                                                                                                                                                                    
-                                                                                                                                                                                                                                                                                                                                            # 明细行
-                                                                                                                                                                                                                                                                                                                                                    for _, row in sub.iterrows():
-                                                                                                                                                                                                                                                                                                                                                                if str(row['收货单位']).strip():
-                                                                                                                                                                                                                                                                                                                                                                                res.append(f"{row['收货单位']}")
-                                                                                                                                                                                                                                                                                                                                                                                            # 格式：货物名称 型号规格 车数(1) 吨数 金额
-                                                                                                                                                                                                                                                                                                                                                                                                        res.append(f"{row['货物名称']} {row['型号规格']} 1 {row['净重']:.2f} {row['金额']:.2f}")
+    for cat in ['现金', '微信', '签单']:
+        sub = df[df['分类'] == cat]
+        if sub.empty: continue
+        
+        if cat == '签单':
+            res.append(f"\n{cat}: 车数 {len(sub)} 吨数 {sub['净重'].sum():.2f}")
+        else:
+            res.append(f"\n{cat}: 车数 {len(sub)} 吨数 {sub['净重'].sum():.2f} 金额 {sub['金额'].sum():.2f}")
+        
+        for _, row in sub.iterrows():
+            if str(row['收货单位']).strip():
+                res.append(f"{row['收货单位']}")
+            res.append(f"{row['货物名称']} {row['型号规格']} 1 {row['净重']:.2f} {row['金额']:.2f}")
 
-                                                                                                                                                                                                                                                                                                                                                                                                            return "\n".join(res)
+    return "\n".join(res)
 
-                                                                                                                                                                                                                                                                                                                                                                                                            # --- 网页界面 ---
-                                                                                                                                                                                                                                                                                                                                                                                                            st.title("🚛 自动汇总报数助手")
+st.title("🚛 报数汇总助手")
+st.write("上传你的 Excel 表格，自动生成汇总文本")
 
-                                                                                                                                                                                                                                                                                                                                                                                                            uploaded_file = st.file_uploader("点击此处上传 Excel 文件", type=["xlsx", "xls"])
+uploaded_file = st.file_uploader("选择文件", type=["xlsx", "xls"])
 
-                                                                                                                                                                                                                                                                                                                                                                                                            if uploaded_file:
-                                                                                                                                                                                                                                                                                                                                                                                                                try:
-                                                                                                                                                                                                                                                                                                                                                                                                                        df = pd.read_excel(uploaded_file)
-                                                                                                                                                                                                                                                                                                                                                                                                                                # 检查是否包含过磅类型
-                                                                                                                                                                                                                                                                                                                                                                                                                                        if '过磅类型' not in [str(c).strip() for c in df.columns]:
-                                                                                                                                                                                                                                                                                                                                                                                                                                                    st.error("上传失败：Excel 中找不到【过磅类型】列，请检查文件。")
-                                                                                                                                                                                                                                                                                                                                                                                                                                                            else:
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                        final_text = process_data(df)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    st.success("汇总生成成功！")
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                # 方便手机点击一键复制
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            st.text_area("长按下方文字全选复制：", value=final_text, height=450)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        st.button("清除数据重新上传")
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            except Exception as e:
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    st.error(f"处理出错：{e}")
-                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+if uploaded_file:
+    try:
+        df = pd.read_excel(uploaded_file)
+        if '过磅类型' not in df.columns:
+            st.error("表格格式不正确，没找到【过磅类型】列")
+        else:
+            result = process_data(df)
+            st.success("汇总成功！")
+            st.text_area("复制结果：", value=result, height=400)
+    except Exception as e:
+        st.error(f"出错啦: {e}")
