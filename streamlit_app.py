@@ -19,11 +19,16 @@ def process_data(df, time_range):
     df['净重'] = pd.to_numeric(df['净重'], errors='coerce').fillna(0)
     df['金额'] = pd.to_numeric(df['金额'], errors='coerce').fillna(0)
 
-    valid_df = df[df['分类'].isin(['现金', '微信', '签单'])]
+    # 分离出需要汇总金额的类型（现金+微信）
+    money_df = df[df['分类'].isin(['现金', '微信'])]
+    all_valid_df = df[df['分类'].isin(['现金', '微信', '签单'])]
     
     res = []
+    # --- 1. 头部汇总 ---
     res.append(f"{time_range}")
-    res.append(f"{len(valid_df)}车{valid_df['净重'].sum():.2f}吨{int(valid_df['金额'].sum())}元")
+    # 车数和吨数是全汇总，金额只汇总现金和微信
+    total_money = int(money_df['金额'].sum())
+    res.append(f"{len(all_valid_df)}车{all_valid_df['净重'].sum():.2f}吨{total_money}元")
     res.append("")
 
     for cat in ['现金', '微信', '签单']:
@@ -32,25 +37,33 @@ def process_data(df, time_range):
             res.append(f"{cat}:无\n")
             continue
         
-        # 板块标题
-        c_cars, c_tons, c_money = len(sub), sub['净重'].sum(), int(sub['金额'].sum())
-        title = f"{cat}:{c_cars}车{c_tons:.2f}吨" + (f"{c_money}元" if cat != '签单' else "")
-        res.append(title)
+        # --- 2. 版块标题 ---
+        c_cars, c_tons = len(sub), sub['净重'].sum()
+        if cat == '签单':
+            res.append(f"{cat}:{c_cars}车{c_tons:.2f}吨") # 签单不显示金额
+        else:
+            c_money = int(sub['金额'].sum())
+            res.append(f"{cat}:{c_cars}车{c_tons:.2f}吨{c_money}元")
 
-        # 按收货单位分组统计
+        # --- 3. 按收货单位分组统计 ---
         unit_groups = sub.groupby('收货单位', sort=False)
         for unit_name, unit_df in unit_groups:
             u_cars, u_tons = len(unit_df), unit_df['净重'].sum()
+            # 签单单位不显示金额
             res.append(f"{unit_name}:{u_cars}车{u_tons:.2f}吨")
             
             # 统计具体货物
             cargo_groups = unit_df.groupby(['货物名称', '型号规格'], sort=False)
             for (cargo, spec), c_df in cargo_groups:
                 spec_str = f"({spec})" if spec else ""
-                cg_money = f"{int(c_df['金额'].sum())}元" if cat != '签单' else ""
-                res.append(f"{cargo}{spec_str}:{len(c_df)}车{c_df['净重'].sum():.2f}吨{cg_money}")
+                # 货物明细：签单不显示金额
+                if cat == '签单':
+                    res.append(f"{cargo}{spec_str}:{len(c_df)}车{c_df['净重'].sum():.2f}吨")
+                else:
+                    cg_money = f"{int(c_df['金额'].sum())}元"
+                    res.append(f"{cargo}{spec_str}:{len(c_df)}车{c_df['净重'].sum():.2f}吨{cg_money}")
             
-            # --- 关键修改：收货方之间增加空行 ---
+            # 收货方之间增加空行
             res.append("") 
 
     res.append("。")
@@ -64,11 +77,8 @@ if uploaded_file:
     try:
         df = pd.read_excel(uploaded_file)
         result_text = process_data(df, time_input)
-        
-        st.success("汇总成功！点击下方黑框右上角图标即可复制：")
-        
-        # 使用 st.code 会自动在右上角显示复制按钮
+        st.success("汇总成功！点击下方黑框右上角图标复制：")
+        # 使用 st.code 展示结果，自带复制按钮
         st.code(result_text, language="markdown")
-        
     except Exception as e:
         st.error(f"处理出错: {e}")
