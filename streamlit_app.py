@@ -2,12 +2,11 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-st.set_page_config(page_title="报数汇总助手", layout="centered")
+st.set_page_config(page_title="报数助手", layout="centered")
 
 def process_data(df, time_range):
     df.columns = [str(c).strip() for c in df.columns]
     
-    # 转换逻辑
     def get_cat(x):
         val = str(x).strip()
         if '零售（现金）' in val: return '现金'
@@ -19,12 +18,9 @@ def process_data(df, time_range):
     df = df.fillna('')
     df['净重'] = pd.to_numeric(df['净重'], errors='coerce').fillna(0)
     df['金额'] = pd.to_numeric(df['金额'], errors='coerce').fillna(0)
-    df['车数'] = 1
 
-    # 只统计目标类型
     valid_df = df[df['分类'].isin(['现金', '微信', '签单'])]
     
-    # --- 拼装输出文本 ---
     res = []
     res.append(f"{time_range}")
     res.append(f"{len(valid_df)}车{valid_df['净重'].sum():.2f}吨{int(valid_df['金额'].sum())}元")
@@ -36,50 +32,43 @@ def process_data(df, time_range):
             res.append(f"{cat}:无\n")
             continue
         
-        # 版块小计
-        cat_cars = len(sub)
-        cat_tons = sub['净重'].sum()
-        cat_money = int(sub['金额'].sum())
-        
-        if cat == '签单':
-            res.append(f"{cat}:{cat_cars}车{cat_tons:.2f}吨")
-        else:
-            res.append(f"{cat}:{cat_cars}车{cat_tons:.2f}吨{cat_money}元")
+        # 板块标题
+        c_cars, c_tons, c_money = len(sub), sub['净重'].sum(), int(sub['金额'].sum())
+        title = f"{cat}:{c_cars}车{c_tons:.2f}吨" + (f"{c_money}元" if cat != '签单' else "")
+        res.append(title)
 
-        # --- 按“收货单位”汇总 ---
-        unit_groups = sub.groupby('收货单位')
+        # 按收货单位分组统计
+        unit_groups = sub.groupby('收货单位', sort=False)
         for unit_name, unit_df in unit_groups:
-            if unit_name: # 如果收货单位不为空
-                res.append(f"{unit_name}:{len(unit_df)}车{unit_df['净重'].sum():.2f}吨")
+            u_cars, u_tons = len(unit_df), unit_df['净重'].sum()
+            res.append(f"{unit_name}:{u_cars}车{u_tons:.2f}吨")
             
-            # --- 按“货物+规格”汇总 ---
-            cargo_groups = unit_df.groupby(['货物名称', '型号规格'])
+            # 统计具体货物
+            cargo_groups = unit_df.groupby(['货物名称', '型号规格'], sort=False)
             for (cargo, spec), c_df in cargo_groups:
                 spec_str = f"({spec})" if spec else ""
-                c_money_str = f"{int(c_df['金额'].sum())}元" if cat != '签单' else ""
-                res.append(f"{cargo}{spec_str}:{len(c_df)}车{c_df['净重'].sum():.2f}吨{c_money_str}")
-        res.append("") # 版块间空行
+                cg_money = f"{int(c_df['金额'].sum())}元" if cat != '签单' else ""
+                res.append(f"{cargo}{spec_str}:{len(c_df)}车{c_df['净重'].sum():.2f}吨{cg_money}")
+            
+            # --- 关键修改：收货方之间增加空行 ---
+            res.append("") 
 
     res.append("。")
     return "\n".join(res)
 
-# --- 界面 ---
 st.title("🚛 报数汇总助手")
-
-# 侧边栏或顶部设置时间
-time_input = st.text_input("请输入报数时间段：", value="26年1月1日07:00-18:00")
-
-uploaded_file = st.file_uploader("选择 Excel 文件 (.xls 或 .xlsx)", type=["xlsx", "xls"])
+time_input = st.text_input("1. 输入时间段：", value="26年1月1日07:00-18:00")
+uploaded_file = st.file_uploader("2. 上传 Excel (.xls/xlsx)", type=["xlsx", "xls"])
 
 if uploaded_file:
     try:
         df = pd.read_excel(uploaded_file)
-        if '过磅类型' not in df.columns:
-            st.error("表格格式不正确，没找到【过磅类型】列")
-        else:
-            result_text = process_data(df, time_input)
-            st.success("汇总成功！")
-            # Streamlit 的 text_area 右上角自带一键复制按钮
-            st.text_area("直接点击右上角图标复制：", value=result_text, height=450)
+        result_text = process_data(df, time_input)
+        
+        st.success("汇总成功！点击下方黑框右上角图标即可复制：")
+        
+        # 使用 st.code 会自动在右上角显示复制按钮
+        st.code(result_text, language="markdown")
+        
     except Exception as e:
         st.error(f"处理出错: {e}")
